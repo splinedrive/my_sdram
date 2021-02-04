@@ -18,10 +18,8 @@
  */
 `include "my_sdram_ctrl.v"
 
-`ifndef SYNTHESES
-`default_nettype none
-`endif
-
+`ifdef SYNTHESES
+//////////////////////////////////////////////////////////////////////////////////////////
 module top(
   input           clk_25M,
 
@@ -84,8 +82,8 @@ always @(posedge clk) begin
 
 end
 
-wire [6:0] segments;
-reg [3:0] bcd;
+wire  [6:0] segments;
+reg   [3:0] bcd;
 /*
 always @(posedge clk) begin
 
@@ -183,20 +181,19 @@ end
 
 
 //wire [15:0] leds = 16'b0000_0000_0000_0000;
-reg [15:0] leds;// = SDRAM_A[19:4];//{ {15{1'b0}}, error}; //SDRAM_DQ_IN;
-reg [15:0] leds1;// = SDRAM_A[19:4];//{ {15{1'b0}}, error}; //SDRAM_DQ_IN;
+wire [15:0] leds;// = SDRAM_A[19:4];//{ {15{1'b0}}, error}; //SDRAM_DQ_IN;
+wire [15:0] leds1;// = SDRAM_A[19:4];//{ {15{1'b0}}, error}; //SDRAM_DQ_IN;
 //assign      leds = RdData;//SDRAM_DQ_IN;
 //assign leds1 = 0;
-assign PMOD[15:0] = ((leds & 16'h000f)<<4) | ((leds & 16'h00f0)>>4) 
+assign PMOD[15:0] = ((leds & 16'h000f)<<4) | ((leds & 16'h00f0)>>4)
 		| ((leds & 16'h0f00)<<4) | ((leds & 16'hf000)>>4);
 
-assign PMOD[23:20] = {free,valid,sdram_we_n,sd_clk};
+assign PMOD[23:20] = {!busy,valid,sdram_we_n,sd_clk};
 assign PMOD[19:16] = {sdram_dq_in[0], sdram_dq_out[0], read_req, write_req};
 
-assign PMODA[32+:16] = ((leds1 & 16'h000f)<<4) | ((leds1 & 16'h00f0)>>4) 
+assign PMODA[32+:16] = ((leds1 & 16'h000f)<<4) | ((leds1 & 16'h00f0)>>4)
 		| ((leds1 & 16'h0f00)<<4) | ((leds1 & 16'hf000)>>4);
 
-`ifdef SYNTHESES
   SB_IO #(
     .PIN_TYPE(6'b1010_01),
     .PULLUP(1'b0)
@@ -206,7 +203,6 @@ assign PMODA[32+:16] = ((leds1 & 16'h000f)<<4) | ((leds1 & 16'h00f0)>>4)
     .D_OUT_0(sdram_dq_out),
     .D_IN_0(sdram_dq_in)
   );
-`endif
 
 // sdram
 assign sd_addr  = sdram_addr;
@@ -218,6 +214,30 @@ assign sd_ras   = sdram_ras_n;
 assign sd_clk   = sdram_clk;
 assign sd_cke   = sdram_cken;
 assign sd_cs    = sdram_cs_n;
+assign leds = dout;
+assign leds1 = w_addr[19:4] | r_addr[19:4];
+//////////////////////////////////////////////////////////////////////////////////////////
+`else
+`timescale 1ns/1ps
+`default_nettype none
+module top_tb();
+
+localparam SYSTEM_CLK_MHZ=25;
+reg clk = 0;
+always #5 clk = !clk;
+
+initial
+begin
+
+  $dumpfile("top.vcd");
+  $dumpvars(0, top_tb);
+  //$dumpoff;
+  $dumpon;
+
+  repeat(20000) @(posedge clk);
+  $finish();
+end
+`endif
 
 reg clken;
 
@@ -247,7 +267,7 @@ wire sdram_ras_n;
 wire sdram_cas_n;
 
 wire [15:0] sdram_dq_in;
-reg [15:0] sdram_dq_out;
+wire [15:0] sdram_dq_out;
 
 wire read_valid;
 wire [4:0] sdram_state;
@@ -289,46 +309,33 @@ my_sdram_ctrl #(.SDRAM_CLK_FREQ(SYSTEM_CLK_MHZ)) my_sdram_ctrl_i(
   sdram_state
 );
 
+reg [3:0]   state;
+reg [3:0]   return_state;
+reg [31:0]  wait_states;
 
-
-reg [3:0] state;
-reg [3:0] return_state;;
-reg [31:0] wait_states;
-reg write_disabled;
-reg busy_old;
-reg old_read_valid;
-
-reg write_enable;
+reg busy_r;
+reg read_valid_r;
 reg write_gnt_r;
-
+reg read_gnt_r;
 always @(posedge clk) begin
-  busy_old <= busy;
-  old_read_valid <= read_valid;
-  write_gnt_r <= write_gnt;
+  busy_r        <= busy;
+  read_valid_r  <= read_valid;
+  write_gnt_r   <= write_gnt;
+  read_gnt_r    <= read_gnt;
 end
 
-wire free;
-assign free = !(!busy_old & busy);
-wire valid;
-assign valid = (!old_read_valid & read_valid);
-
-wire write_gnt_flag;
-assign write_gnt_flag = (!write_gnt_r & write_gnt);
-
-
-//assign leds1 = state;
-//assign leds1 = addr[15:0];
-//assign leds = sdram_state;
-wire end_of_mem;
-assign end_of_mem = &w_addr; //(addr == 20'hF_FFFF); /* 2<<19 -1 => (2^20) -1*/
+wire free = !(!busy_r & busy);
+wire valid = (!read_valid_r & read_valid);
+wire write_gnt_edge = (!write_gnt_r & write_gnt);
+wire read_gnt_edge  = (!read_gnt_r  & read_gnt);
 
 
 reg [5:0] reset_cnt = 0;
 wire reset_n = &reset_cnt;
 always @(posedge clk) reset_cnt <= reset_cnt + !reset_n;
 
-assign leds = dout;
-assign leds1 = w_addr[19:4] | r_addr[19:4];
+localparam OFFSET = 1;
+localparam END_OF_MEMORY = ((1<<20)-OFFSET);
 always @(posedge clk) begin
 
   if (reset_n == 1'b0) begin
@@ -346,7 +353,6 @@ always @(posedge clk) begin
         write_req <= 1'b0;
         w_addr <= 0;
         r_addr <= 0;
-        write_enable <= 1;
         wait_states <= 12_500_000;//SYSTEM_CLK_MHZ*1000_000; // 100 us
         return_state <= 1;
         state <= 1;
@@ -354,7 +360,7 @@ always @(posedge clk) begin
 
       1: begin
         clken <= 1'b1;
-        if (free) begin 
+        if (free) begin
           state <= 2; // should be !free
           write_req <= 1;
         end
@@ -363,10 +369,10 @@ always @(posedge clk) begin
     2: begin
       din <= w_addr[19:4];
 
-      if (write_gnt_flag) begin
-        w_addr <= w_addr + 1;
+      if (write_gnt_edge) begin
+        w_addr <= w_addr + OFFSET;
 
-        if (&w_addr) begin
+        if (w_addr == (END_OF_MEMORY)) begin
           din <= 0;
           r_addr <= 0;
           w_addr <= 0;
@@ -385,21 +391,20 @@ always @(posedge clk) begin
     3: begin
 
       read_req <= 1'b1;
-      if (read_gnt) state <= 4;
-
+      if (read_gnt_edge) state <= 4;
 
     end
 
   4: begin
-//    read_req <= 1'b0;
+    read_req <= 1'b1;
     if (valid) begin
-      r_addr <= r_addr + 1;
+      r_addr <= r_addr + OFFSET;
 
       if (dout != r_addr[19:4]) begin
         state <= 11;
       end else begin
 
-        if (&r_addr) begin
+        if (r_addr == (END_OF_MEMORY)) begin
           r_addr <= 0;
           w_addr <= 0;
 
@@ -437,7 +442,7 @@ end
 end
 endmodule
 
-
+`ifdef SYNTHESES
  /*
   * PLL configuration
   *
@@ -471,3 +476,4 @@ endmodule
    );
 
    endmodule
+ `endif

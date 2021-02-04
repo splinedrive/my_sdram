@@ -132,7 +132,6 @@ localparam
     $display("TCH: %d cycles", TCH);
     $display("CAS_LATENCY: %d cycles", CAS_LATENCY);
   end
-j
 
   localparam
       RESET                   = 5'd0,
@@ -149,6 +148,29 @@ j
       WAIT_STATES             = 5'd12
     ;
 
+`ifndef SYNTHESES
+  reg[255:0] state_name;
+
+  always @(*) begin
+    case (state)
+      RESET: state_name = "RESET";
+      INIT_SEQ_PRE_CHARGE_ALL: state_name = "INIT_SEQ_PRE_CHARGE_ALL";
+      INIT_SEQ_AUTO_REFRESH0: state_name = "INIT_SEQ_AUTO_REFRESH0";
+      INIT_SEQ_AUTO_REFRESH1: state_name = "INIT_SEQ_AUTO_REFRESH1";
+      INIT_SEQ_LOAD_MODE: state_name = "INIT_SEQ_LOAD_MODE";
+      IDLE: state_name = "IDLE";
+      CAS_LATENCY_READ_DONE: state_name = "CAS_LATENCY_READ_DONE";
+      COL_READ: state_name = "COL_READ";
+      COL_WRITE: state_name = "COL_WRITE";
+      AUTO_REFRESH: state_name = "AUTO_REFRESH";
+      PRE_CHARGE_ALL: state_name = "PRE_CHARGE_ALL";
+      WAIT_STATES: state_name = "WAIT_STATES";
+      default: state_name = "RESET";
+    endcase
+  end
+`endif
+
+
     reg [4:0]  state;
     reg [4:0]  return_state;
     reg [13:0] wait_states;
@@ -157,9 +179,7 @@ j
     reg [19:0] addr_r;
 
     wire [19:0] addr_mux;
-    always @(*) begin
-      addr_mux = (read_req) ? r_addr : w_addr;
-    end
+    assign addr_mux = (read_req) ? r_addr : w_addr;
 
     always @(posedge clk) begin
 
